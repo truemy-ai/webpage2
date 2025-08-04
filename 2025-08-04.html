@@ -1,0 +1,477 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高雄市前鎮區即時天氣</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 React 和 ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- 載入 Babel，用於轉換 JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* 自訂字體，確保中文字體顯示正常 */
+        body {
+            font-family: 'Inter', 'Noto Sans CJK TC', sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // 主應用程式組件
+        const App = () => {
+            // 從 React 全域物件中解構 useState 和 useEffect
+            const { useState, useEffect, useRef, useCallback } = React;
+
+            // 狀態變數：儲存天氣資料
+            const [weatherData, setWeatherData] = useState(null);
+            // 狀態變數：儲存載入狀態
+            const [loading, setLoading] = useState(true);
+            // 狀態變數：儲存錯誤訊息
+            const [error, setError] = useState(null);
+            // 新增狀態變數：儲存現在時刻
+            const [currentTime, setCurrentTime] = useState('');
+
+            // 用於整點報時的 Ref 和狀態
+            const lastChimeHourRef = useRef(-1); // 使用 useRef 儲存上次報時的小時，避免重複報時
+            const chimeAudioRef = useRef(null); // 使用 useRef 儲存音訊元素
+
+            // OpenWeatherMap API Key
+            // 請在這裡填入你的 OpenWeatherMap API Key
+            const API_KEY = "c3a279983235d57dc69818ffffe9a265";
+
+            // 高雄市前鎮區的近似經緯度
+            const LATITUDE = 22.610834;
+            const LONGITUDE = 120.317680;
+
+            // 語音合成實例
+            const speechSynthRef = useRef(null);
+
+            // 初始化語音合成器，只執行一次
+            useEffect(() => {
+                if ('speechSynthesis' in window) {
+                    speechSynthRef.current = window.speechSynthesis;
+                } else {
+                    console.warn("瀏覽器不支援 Web Speech API (SpeechSynthesis)。");
+                }
+            }, []);
+
+            // 語音播報函數
+            const speakText = useCallback((text) => {
+                if (speechSynthRef.current && text) {
+                    // 確保取消任何正在進行的語音
+                    speechSynthRef.current.cancel();
+
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'zh-TW'; // 設定語音語言為繁體中文
+                    utterance.rate = 1; // 語速 (0.1 - 10, 預設 1)
+                    utterance.pitch = 1; // 音高 (0 - 2, 預設 1)
+
+                    utterance.onerror = (event) => {
+                        console.error('語音播報錯誤:', event.error);
+                        setError(`語音播報失敗: ${event.error}. 可能需要使用者互動來啟用語音。`);
+                    };
+                    
+                    speechSynthRef.current.speak(utterance);
+                } else if (!('speechSynthesis' in window)) {
+                    setError("您的瀏覽器不支援語音播報功能。");
+                }
+            }, []);
+
+            // 獲取天氣資料的函數，使用 useCallback 包裹以優化性能
+            const fetchWeatherData = useCallback(async () => {
+                if (!API_KEY) {
+                    setError("請在程式碼中填入你的 OpenWeatherMap API Key。");
+                    setLoading(false);
+                    return;
+                }
+
+                setLoading(true); // 開始獲取資料時顯示載入中
+                setError(null); // 清除之前的錯誤訊息
+
+                // OpenWeatherMap API 網址
+                const apiUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${LATITUDE}&lon=${LONGITUDE}&appid=${API_KEY}&units=metric&lang=zh_tw`;
+
+                try {
+                    // 嘗試進行 API 呼叫 (包含指數退避機制)
+                    let response;
+                    let data;
+                    let retries = 0;
+                    const MAX_RETRIES = 5;
+                    const BASE_DELAY = 1000; // 1 second
+
+                    while (retries < MAX_RETRIES) {
+                        response = await fetch(apiUrl);
+                        if (response.ok) {
+                            data = await response.json();
+                            break; // Success, exit loop
+                        } else if (response.status === 429) { // Too Many Requests
+                            const delay = BASE_DELAY * Math.pow(2, retries);
+                            console.warn(`API Rate limit hit. Retrying in ${delay / 1000} seconds...`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            retries++;
+                        } else if (response.status === 401) { // Unauthorized error
+                            // 更明確的錯誤訊息
+                            throw new Error("API Key 無效或尚未啟用。請確認您的 OpenWeatherMap API Key 是否正確且已啟用。");
+                        }
+                        else {
+                            // Other HTTP errors
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`無法獲取天氣資料: ${response.statusText}`);
+                    }
+
+                    // 處理 API 回傳的資料
+                    const weatherCondition = data.weather[0].description;
+                    const temperature = data.main.temp.toFixed(1); // 溫度取一位小數
+                    const feelsLike = data.main.feels_like.toFixed(1); // 新增體感溫度
+                    const humidity = data.main.humidity;
+                    const windSpeed = (data.wind.speed * 3.6).toFixed(1); // 從 m/s 轉換為 km/h
+                    const windDeg = data.wind.deg;
+                    const pressure = data.main.pressure; // 新增氣壓
+                    const visibility = (data.visibility / 1000).toFixed(1); // 能見度從米轉換為公里
+
+                    // 判斷風向
+                    const getWindDirection = (deg) => {
+                        const directions = ['北', '東北', '東', '東南', '南', '西南', '西', '西北'];
+                        const index = Math.round((deg % 360) / 45);
+                        return directions[index % 8];
+                    };
+
+                    // 判斷是否下雨 (簡化判斷，可根據需求擴展)
+                    const isRaining = data.weather[0].main === 'Rain' || data.weather[0].main === 'Drizzle';
+                    const precipitationAmount = isRaining ? "有降水" : "0.0 mm"; // OpenWeatherMap current data doesn't directly provide current mm
+
+                    setWeatherData({
+                        condition: weatherCondition,
+                        temperature: `${temperature}°C`,
+                        feelsLike: `${feelsLike}°C`, // 體感溫度
+                        humidity: `${humidity}%`,
+                        precipitation: precipitationAmount,
+                        windSpeed: `${windSpeed} 公里/小時`,
+                        windDirection: `${getWindDirection(windDeg)} (${windDeg}°)`,
+                        pressure: `${pressure} hPa`, // 氣壓
+                        visibility: `${visibility} 公里`, // 能見度
+                        isRaining: isRaining,
+                        timestamp: new Date().toLocaleString('zh-TW', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                        }).replace(/\//g, '-')
+                    });
+                } catch (err) {
+                    console.error("獲取天氣資料失敗:", err);
+                    setError(`無法獲取天氣資料，請稍後再試。錯誤: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            }, [API_KEY]); // 依賴 API_KEY
+
+            // 使用 useEffect 鉤子在組件載入時獲取天氣資料並設定自動更新
+            useEffect(() => {
+                fetchWeatherData(); // 首次載入時立即獲取資料
+
+                // 每 10 分鐘更新一次資料 (600000 毫秒)
+                const intervalId = setInterval(fetchWeatherData, 600000);
+
+                // 清理函數：在組件卸載時清除定時器
+                return () => clearInterval(intervalId);
+            }, [fetchWeatherData]); // 依賴 fetchWeatherData
+
+            // 新增 useEffect 鉤子來更新現在時刻和處理整點報時
+            useEffect(() => {
+                // 初始化音訊元素（只執行一次）
+                if (!chimeAudioRef.current) {
+                    chimeAudioRef.current = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-01.mp3');
+                    chimeAudioRef.current.volume = 0.7; // 設定報時音量
+                }
+
+                const updateCurrentTimeAndChime = () => {
+                    const now = new Date();
+                    const currentHour = now.getHours();
+                    const currentMinute = now.getMinutes();
+                    const currentSecond = now.getSeconds();
+
+                    // 更新現在時刻顯示
+                    setCurrentTime(now.toLocaleString('zh-TW', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    }).replace(/\//g, '-'));
+
+                    // 整點報時邏輯：在每個小時的開始（例如 00 分 00 秒到 05 秒之間）播放
+                    // 並且確保每個小時只報時一次
+                    if (currentMinute === 0 && currentSecond >= 0 && currentSecond < 5) {
+                        if (currentHour !== lastChimeHourRef.current) {
+                            if (chimeAudioRef.current) {
+                                chimeAudioRef.current.play().catch(e => {
+                                    console.error("播放報時音效失敗:", e);
+                                    // 提示使用者需要互動才能播放音效
+                                    setError("報時音效可能因瀏覽器政策被阻擋，請點擊頁面任意處啟用音效。");
+                                });
+                            }
+                            lastChimeHourRef.current = currentHour; // 更新上次報時的小時
+                        }
+                    } else if (currentMinute === 59 && currentSecond > 55) {
+                        // 在每個小時結束前重置 lastChimeHourRef，以便下個小時能再次報時
+                        lastChimeHourRef.current = -1;
+                    }
+                };
+
+                updateCurrentTimeAndChime(); // 首次載入時更新
+                const timeIntervalId = setInterval(updateCurrentTimeAndChime, 1000); // 每秒更新
+
+                // 清理函數：在組件卸載時清除定時器
+                return () => clearInterval(timeIntervalId);
+            }, []); // 空依賴陣列表示只在組件掛載和卸載時執行
+
+            // 手動更新按鈕的點擊處理函數
+            const handleManualUpdate = () => {
+                fetchWeatherData(); // 呼叫獲取天氣資料的函數
+                const now = new Date();
+                const currentHour = now.getHours();
+                const currentMinute = now.getMinutes();
+                const speechText = `現在時間是 ${currentHour} 點 ${currentMinute} 分。`;
+                speakText(speechText); // 語音播報現在時刻
+            };
+
+            // 根據天氣狀況獲取背景類別
+            const getBackgroundClass = (condition) => {
+                if (!condition) return 'bg-gradient-to-br from-blue-200 to-indigo-200';
+                const lowerCaseCondition = condition.toLowerCase();
+                if (lowerCaseCondition.includes('雨') || lowerCaseCondition.includes('rain') || lowerCaseCondition.includes('drizzle')) {
+                    return 'bg-gradient-to-br from-gray-600 to-gray-800 text-white'; // 下雨天深色調
+                } else if (lowerCaseCondition.includes('雲') || lowerCaseCondition.includes('cloud')) {
+                    return 'bg-gradient-to-br from-blue-300 to-gray-400'; // 多雲天灰色調
+                } else if (lowerCaseCondition.includes('晴') || lowerCaseCondition.includes('clear')) {
+                    return 'bg-gradient-to-br from-blue-300 to-sky-500'; // 晴天藍色調
+                } else if (lowerCaseCondition.includes('霧') || lowerCaseCondition.includes('mist') || lowerCaseCondition.includes('fog')) {
+                    return 'bg-gradient-to-br from-gray-300 to-slate-400'; // 有霧灰色調
+                }
+                return 'bg-gradient-to-br from-blue-200 to-indigo-200'; // 預設漸層
+            };
+
+            // 根據天氣狀況獲取圖示
+            const getWeatherIcon = (condition) => {
+                if (!condition) return '☀️'; // 預設圖示
+                const lowerCaseCondition = condition.toLowerCase();
+                if (lowerCaseCondition.includes('晴') || lowerCaseCondition.includes('clear')) {
+                    return '☀️'; // 晴天
+                } else if (lowerCaseCondition.includes('雲') || lowerCaseCondition.includes('cloud')) {
+                    return '☁️'; // 多雲
+                } else if (lowerCaseCondition.includes('雨') || lowerCaseCondition.includes('rain') || lowerCaseCondition.includes('drizzle')) {
+                    return '🌧️'; // 下雨
+                } else if (lowerCaseCondition.includes('雷') || lowerCaseCondition.includes('thunder')) {
+                    return '⛈️'; // 雷雨
+                } else if (lowerCaseCondition.includes('雪') || lowerCaseCondition.includes('snow')) {
+                    return '❄️'; // 下雪
+                } else if (lowerCaseCondition.includes('霧') || lowerCaseCondition.includes('mist') || lowerCaseCondition.includes('fog')) {
+                    return '🌫️'; // 有霧
+                }
+                return '❓'; // 未知
+            };
+
+            // 載入中狀態顯示
+            if (loading) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 to-purple-100">
+                        <div className="flex flex-col items-center p-8 rounded-xl shadow-2xl bg-white bg-opacity-90 text-blue-700">
+                            <svg className="animate-spin h-10 w-10 text-blue-500 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <div className="text-xl font-semibold">資料載入中，請稍候...</div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 錯誤狀態顯示
+            if (error) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-red-100 to-orange-100">
+                        <div className="text-xl font-semibold text-red-700 p-6 rounded-lg shadow-xl bg-white bg-opacity-90 flex flex-col items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-red-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <p className="text-center">錯誤: {error}</p>
+                            {error.includes("瀏覽器政策") && (
+                                <p className="text-sm mt-2 text-gray-600">
+                                    請點擊頁面任意處或音訊播放器以啟用音效。
+                                </p>
+                            )}
+                            {error.includes("語音播報失敗") && (
+                                <p className="text-sm mt-2 text-gray-600">
+                                    此功能可能需要使用者互動（例如點擊頁面）才能首次啟用。
+                                </p>
+                            )}
+                            <button
+                                onClick={handleManualUpdate}
+                                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+                            >
+                                重新載入
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 當沒有天氣資料時 (例如 API Key 錯誤或首次載入失敗)
+            if (!weatherData) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-100 to-slate-200">
+                        <div className="text-xl font-semibold text-gray-700 p-6 rounded-lg shadow-xl bg-white bg-opacity-90 flex flex-col items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9.172 7.828a4 4 0 015.656 0M12 10.5V16m-4 2h8a2 2 0 002-2V7a2 2 0 00-2-2H8a2 2 0 00-2 2v9a2 2 0 002 2z" />
+                            </svg>
+                            <p className="text-center">無法顯示天氣資料。請檢查您的 API Key 或稍後再試。</p>
+                            <button
+                                onClick={handleManualUpdate}
+                                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+                            >
+                                重新載入
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 渲染天氣資訊
+            return (
+                <div className={`min-h-screen flex items-center justify-center p-4 sm:p-6 transition-all duration-500 ${getBackgroundClass(weatherData.condition)}`}>
+                    <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 md:p-10 max-w-lg w-full transform transition-transform duration-300 hover:scale-105">
+                        <h2 className="text-2xl sm:text-3xl font-extrabold text-center mb-4 text-blue-800 tracking-wide">
+                            高雄市前鎮區週邊即時天氣
+                        </h2>
+                        <p className="text-center text-sm text-gray-500 mb-6">資料來源: OpenWeatherMap</p>
+
+                        {/* 現在時刻顯示 */}
+                        <div className="text-center text-xl sm:text-2xl font-semibold text-gray-700 mb-4 bg-blue-50 py-2 rounded-lg shadow-inner">
+                            現在時刻：<span className="font-bold text-blue-600">{currentTime}</span>
+                        </div>
+
+                        {/* 天氣狀況摘要 */}
+                        <div className={`flex items-center justify-center p-4 rounded-xl mb-6 shadow-md transition-all duration-300 ${
+                            weatherData.isRaining ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                        }`}>
+                            <span className="text-4xl sm:text-5xl mr-3">{getWeatherIcon(weatherData.condition)}</span>
+                            <span className="text-2xl sm:text-3xl font-extrabold">
+                                {weatherData.isRaining ? '目前正在下雨！' : '目前不會下雨！'}
+                            </span>
+                        </div>
+
+                        <div className="space-y-4 text-lg sm:text-xl text-gray-800">
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">🌡️</span>天氣狀況
+                                </span>
+                                <span className="font-medium">{weatherData.condition}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">☀️</span>溫度
+                                </span>
+                                <span className="font-medium">{weatherData.temperature}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">🧍‍♀️</span>體感溫度
+                                </span>
+                                <span className="font-medium">{weatherData.feelsLike}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">💧</span>相對濕度
+                                </span>
+                                <span className="font-medium">{weatherData.humidity}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">🌧️</span>降水量
+                                </span>
+                                <span className="font-medium">{weatherData.precipitation}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">💨</span>風速
+                                </span>
+                                <span className="font-medium">{weatherData.windSpeed}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">🧭</span>風向
+                                </span>
+                                <span className="font-medium">{weatherData.windDirection}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">📊</span>氣壓
+                                </span>
+                                <span className="font-medium">{weatherData.pressure}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg shadow-sm">
+                                <span className="font-semibold text-gray-600 flex items-center">
+                                    <span className="mr-2 text-xl">🔭</span>能見度
+                                </span>
+                                <span className="font-medium">{weatherData.visibility}</span>
+                            </div>
+                        </div>
+
+                        <div className="text-sm sm:text-base text-gray-500 text-center mt-6 pt-4 border-t border-gray-200">
+                            天氣資料更新時間：<span className="font-medium">{weatherData.timestamp}</span>
+                        </div>
+
+                        {/* 手動更新按鈕 */}
+                        <div className="mt-8 text-center">
+                            <button
+                                onClick={handleManualUpdate}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-75 flex items-center justify-center mx-auto"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004 12c0 2.21.894 4.208 2.342 5.656L9 20m3-2v-5h.582m15.356 2A8.001 8.001 0 004 12c0 2.21.894 4.208 2.342 5.656L9 20" />
+                                </svg>
+                                手動更新天氣並播報時間
+                            </button>
+                        </div>
+
+                        {/* 背景音樂控制 */}
+                        <div className="mt-6 text-center">
+                            <audio controls loop className="w-full max-w-xs mx-auto">
+                                {/* 請在這裡替換成您自己的背景音樂檔案路徑 */}
+                                {/* 範例: <source src="your_background_music.mp3" type="audio/mpeg"> */}
+                                <source src="https://preview.dewolfemusic.com/S461483_128.mp3" type="audio/mpeg" />
+                                您的瀏覽器不支援音訊元素。
+                            </audio>
+                            <p className="text-xs text-gray-400 mt-2">
+                                (背景音樂：請替換為您自己的音樂檔案路徑，目前為範例音樂)
+                            </p>
+                            <p className="text-xs text-red-500 mt-2">
+                                提醒：音效和語音播報可能因瀏覽器自動播放政策被阻擋，請點擊頁面任意處或音訊播放器以啟用音效。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 將 React 應用程式渲染到 HTML 頁面中
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
