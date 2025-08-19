@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8" />
+<title>華台動物語詞配對</title>
+<style>
+  body {
+    font-family: "Microsoft JhengHei", sans-serif;
+    background-color: #F0F6D2;  /* 淺草色 */
+    color: #6a0d4d;
+    margin: 0;
+    padding: 20px;
+  }
+  h1 {
+    color: #a83262;
+    text-align: center;
+    margin-bottom: 5px;
+  }
+  #subtitle {
+    text-align: center;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #914d6c;
+    margin-bottom: 10px;
+  }
+  #score {
+    font-size: 1.6em;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 15px;
+    color: #6a0d4d;
+  }
+  .container {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    flex-wrap: nowrap;
+  }
+  .column {
+    border-radius: 15px;
+    box-shadow: 0 5px 10px rgba(168, 50, 98, 0.3);
+    min-width: 320px;
+    max-width: 350px;
+    background: #fff0f6;
+    padding: 20px;
+    user-select: none;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+  }
+  #mandarin {
+    background: #ffd6e8;
+    border: 2px solid #dda0b9;
+    color: #6a0d4d;
+  }
+  #taiwanese {
+    background: #b2e0ff;
+    border: 2px solid #8ec4f9;
+    color: #1a73e8;
+  }
+  .column-header {
+    font-size: 1.8em;
+    font-weight: 900;
+    color: inherit;
+    user-select: none;
+    text-align: center;
+    margin-bottom: 10px;
+    line-height: 1.2;
+  }
+  .words-container {
+    flex-wrap: wrap;
+    flex-grow: 1;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    align-content: flex-start;
+    overflow-x: hidden;
+    max-height: none;
+  }
+  .word {
+    background-color: #fff0f6;
+    padding: 14px 18px;
+    border: 2px solid #dda0b9;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 1.3em;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: background 0.3s, border-color 0.3s, color 0.3s;
+    color: #6a0d4d;
+    user-select: none;
+  }
+  #taiwanese .word {
+    background-color: #e3f0ff;
+    border-color: #8ec4f9;
+    color: #1a73e8;
+  }
+  .word.selected {
+    background-color: #f8bbd0;
+    border-color: #e91e63;
+    color: #660033;
+  }
+  #taiwanese .word.selected {
+    background-color: #90caf9;
+    border-color: #1a73e8;
+    color: #0d47a1;
+  }
+  .word.matched {
+    background-color: #f48fb1;
+    border-color: #ad1457;
+    cursor: default;
+    color: white;
+    font-weight: 900;
+  }
+  #taiwanese .word.matched {
+    background-color: #2196f3;
+    border-color: #1565c0;
+    color: white;
+    font-weight: 900;
+  }
+  #winMessage {
+    display:none; 
+    text-align:center; 
+    font-weight:bold; 
+    color:#d81b60; 
+    margin-top:20px;
+    transition: all 0.4s ease;
+  }
+  #winMessage.show {
+    display: block;
+    font-size: 4em;
+    animation: scaleUp 1.2s ease forwards;
+  }
+  @keyframes scaleUp {
+    0% { transform: scale(1); opacity: 0; }
+    50% { transform: scale(1.5); opacity: 1; }
+    100% { transform: scale(1.2); opacity: 1; }
+  }
+  #buttons {
+    margin-top: 15px;
+    text-align: center;
+  }
+  #buttons button {
+    font-size: 1em;
+    padding: 8px 20px;
+    margin: 0 10px;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    background-color: #a83262;
+    color: white;
+    font-weight: 700;
+    transition: background-color 0.3s ease;
+  }
+  #buttons button:hover {
+    background-color: #7b244a;
+  }
+  #buttons button#homeBtn {
+    background-color: #2196f3;
+  }
+  #buttons button#homeBtn:hover {
+    background-color: #1769aa;
+  }
+  #buttons button#nextSetBtn {
+    background-color: #4caf50;
+  }
+  #buttons button#nextSetBtn:hover {
+    background-color: #357a38;
+  }
+  @media (max-width: 700px) {
+    .container {
+      flex-direction: column;
+      align-items: center;
+      gap: 30px;
+    }
+    .column {
+      max-width: 90vw;
+      height: auto;
+    }
+    .words-container {
+      justify-content: center;
+      gap: 10px;
+    }
+    .word {
+      font-size: 1.2em;
+      padding: 12px 16px;
+    }
+    #buttons button {
+      margin: 8px 10px;
+      padding: 10px 24px;
+      font-size: 1.1em;
+    }
+  }
+</style>
+</head>
+<body>
+
+<h1>華台動物語詞配對</h1>
+<div id="subtitle">tshi̍h 華文抑是台語攏會使，配對成功會有台語聲音檔喔！</div>
+
+<div id="score">分數：0</div>
+
+<div class="container">
+  <div class="column" id="mandarin">
+    <div class="column-header">中文</div>
+    <div class="words-container" id="mandarin-words"></div>
+  </div>
+  <div class="column" id="taiwanese">
+    <div class="column-header">台語</div>
+    <div class="words-container" id="taiwanese-words"></div>
+  </div>
+</div>
+
+<div id="winMessage">攏 tio̍h，有夠gâu的！</div>
+
+<div id="buttons">
+  <button id="retryBtn">閣耍一擺</button>
+  <button id="nextSetBtn">後一回</button>
+  <button id="homeBtn" onclick="location.href='index.html'">回到遊戲首頁</button>
+</div>
+
+<audio id="correctSound" src="https://cdn.pixabay.com/audio/2022/03/15/audio_8a8ecf9b1f.mp3" preload="auto"></audio>
+
+<script>
+const sets = [
+  [
+    { zh: "老鷹", tw: "鴟鴞", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/7/7881.mp3" },
+    { zh: "鸚鵡", tw: "鸚哥", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/13/13421.mp3" },
+    { zh: "穿山甲", tw: "鯪鯉", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/12/12938.mp3" },
+    { zh: "蝙蝠", tw: "夜婆", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/3/3792.mp3" },
+    { zh: "青蛙", tw: "水雞", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/1/1192.mp3" },
+    { zh: "蜥蜴", tw: "杜定", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/3/3234.mp3" },
+    { zh: "企鵝", tw: "徛鵝", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/7/7282.mp3" },
+    { zh: "黑面琵鷺", tw: "烏面抐桮", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/6/6270.mp3" },
+    { zh: "老鼠", tw: "鳥鼠", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/8/8129.mp3" },
+    { zh: "松鼠", tw: "膨鼠", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/11/11877.mp3" }
+  ],
+  [
+    { zh: "夜鷺", tw: "暗光鳥", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/9/9585.mp3" },
+    { zh: "五色鳥", tw: "花仔和尚", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/27/27448.mp3" },
+    { zh: "鴿子", tw: "粉鳥", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/6/6452.mp3" },
+    { zh: "八哥", tw: "鵁鴒", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/12/12470.mp3" },
+    { zh: "喜鵲", tw: "客鳥", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/4/4879.mp3" },
+    { zh: "灰面鵟鷹", tw: "南路鷹", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/4/4745.mp3" },
+    { zh: "候鳥", tw: "過冬鳥", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/27/27326.mp3" },
+    { zh: "貓頭鷹", tw: "貓頭鳥", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/11/11943.mp3" },
+    { zh: "白頭翁", tw: "白頭鵠仔", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/2/2016.mp3" },
+    { zh: "臺灣藍鵲", tw: "長尾山娘", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/RB/fx/295521.mp3" }
+  ],
+  [
+    { zh: "公牛", tw: "牛犅", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/1/1263.mp3" },
+    { zh: "白鼻心", tw: "果子猫", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/4/4197.mp3" },
+    { zh: "石虎", tw: "山貓", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/0/531.mp3" },
+    { zh: "小鴨子", tw: "鴨咪仔", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/12/12102.mp3" },
+    { zh: "綠綉眼", tw: "青苔仔", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/27/27536.mp3" },
+    { zh: "麻雀", tw: "厝角鳥仔", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/5/5822.mp3" },
+    { zh: "雨傘節", tw: "簸箕甲", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/12/12830.mp3" },
+    { zh: "眼鏡蛇", tw: "飯匙銃", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/9/9258.mp3" },
+    { zh: "壁虎", tw: "蟮蟲仔", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/12/12611.mp3" },
+    { zh: "蝌蚪", tw: "肚胿仔", audio: "https://sutian.moe.edu.tw/media/senn/mp3/imtong/subak/3/3369.mp3" }
+  ]
+];
+
+let currentSetIndex = 0;
+let score = 0;
+let selected = { zh: null, tw: null };
+let winSoundPlayed = false;
+
+function shuffle(array) {
+  return array.sort(() => Math.random() - 0.5);
+}
+
+function createWordElement(text, type, audioUrl) {
+  const div = document.createElement("div");
+  div.className = "word";
+  div.textContent = text;
+  div.dataset.audio = audioUrl || "";
+  div.onclick = () => {
+    if (div.classList.contains("matched")) return;
+    if (selected[type] === div) {
+      div.classList.remove("selected");
+      selected[type] = null;
+      return;
+    }
+    if (selected[type]) selected[type].classList.remove("selected");
+    div.classList.add("selected");
+    selected[type] = div;
+
+    if (selected.zh && selected.tw) {
+      checkMatch();
+    }
+  };
+  return div;
+}
+
+async function playAudio(audioElement) {
+  return new Promise((resolve) => {
+    audioElement.currentTime = 0;
+    const playPromise = audioElement.play();
+    if (playPromise !== undefined) {
+      playPromise.then(() => {
+        audioElement.onended = () => resolve();
+      }).catch(() => resolve());
+    } else {
+      resolve();
+    }
+  });
+}
+
+async function checkMatch() {
+  const zhText = selected.zh.textContent;
+  const twText = selected.tw.textContent;
+  const match = sets[currentSetIndex].find(w => w.zh === zhText && w.tw === twText);
+
+  if (match) {
+    selected.zh.classList.add("matched");
+    selected.tw.classList.add("matched");
+
+    const correctSound = document.getElementById("correctSound");
+    const twAudio = new Audio(match.audio);
+
+    try {
+      await playAudio(correctSound);
+      await playAudio(twAudio);
+    } catch(e) {
+      console.warn("播放音效錯誤:", e);
+    }
+
+    score++;
+    document.getElementById("score").textContent = `分數：${score}`;
+
+    if (score === sets[currentSetIndex].length && !winSoundPlayed) {
+      winSoundPlayed = true;
+      const winMessage = document.getElementById("winMessage");
+      winMessage.classList.add("show");
+    }
+  }
+
+  selected.zh.classList.remove("selected");
+  selected.tw.classList.remove("selected");
+  selected.zh = null;
+  selected.tw = null;
+}
+
+function initGame() {
+  score = 0;
+  winSoundPlayed = false;
+  document.getElementById("score").textContent = `分數：${score}`;
+  selected.zh = null;
+  selected.tw = null;
+  const winMessage = document.getElementById("winMessage");
+  winMessage.classList.remove("show");
+
+  const zhContainer = document.getElementById("mandarin-words");
+  const twContainer = document.getElementById("taiwanese-words");
+  zhContainer.innerHTML = "";
+  twContainer.innerHTML = "";
+
+  const currentSet = sets[currentSetIndex];
+  const zhList = shuffle([...currentSet]);
+  const twList = shuffle([...currentSet]);
+
+  zhList.forEach(w => zhContainer.appendChild(createWordElement(w.zh, "zh")));
+  twList.forEach(w => twContainer.appendChild(createWordElement(w.tw, "tw", w.audio)));
+}
+
+document.getElementById("retryBtn").addEventListener("click", () => {
+  initGame();
+});
+
+document.getElementById("nextSetBtn").addEventListener("click", () => {
+  currentSetIndex = (currentSetIndex + 1) % sets.length;
+  initGame();
+});
+
+initGame();
+</script>
+
+</body>
+</html>
+
